@@ -1,4 +1,5 @@
 const http = require("http");
+const url = require("url");
 
 const getArgv = require("../functions/getArgv");
 const { firstUpper } = require("../functions/stringFunctions");
@@ -19,9 +20,9 @@ module.exports = class App {
 
   /* events */
   onRequest(req, resp) {
-    const url = req.url;
+    const urlReq = url.parse(req.url).pathname;
 
-    const parts = url.split("/");
+    const parts = urlReq.split("/");
 
     const controller = firstUpper(parts[1]) + "Controller";
     const method = parts[2] || "index";
@@ -29,7 +30,7 @@ module.exports = class App {
     try {
       const controllerClass = require("./controllers/" + controller);
 
-      const controllerObj = new controllerClass(req, resp);
+      const controllerObj = new controllerClass(this, req, resp);
       controllerObj[method]();
     } catch (e) {
       resp.writeHead(404);
