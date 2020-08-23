@@ -45,29 +45,33 @@ module.exports = class BarcodeController extends Controller {
 
     let barcode = query.value;
 
-    // concessionárias
-    if ((barcode && barcode.length === 48) || barcode.length === 44) {
-      if (barcode.length !== 44) {
-        barcode = this.removeDigits(barcode, 4);
-      }
+    if (
+      barcode &&
+      (barcode.length === 48 || barcode.length === 47 || barcode.length === 44)
+    ) {
+      const checkResult = this.checkBarcodeType(barcode);
+      const type = checkResult[0];
 
-      const barcodeData = {
-        prodId: barcode.substring(0, 1),
-        segId: barcode.substring(1, 2),
-        refValueId: barcode.substring(2, 3),
-        generalDigit: Number(barcode.substring(3, 4)),
-      };
+      if (type === "conc") {
+        // concessionárias
+        barcode = checkResult[1];
 
-      const info = this.barcodeInfo.conc;
+        const barcodeData = {
+          prodId: barcode.substring(0, 1),
+          segId: barcode.substring(1, 2),
+          refValueId: barcode.substring(2, 3),
+          generalDigit: Number(barcode.substring(3, 4)),
+        };
 
-      const barcodeInfo = {
-        prod: info.prod[barcodeData.prodId],
-        seg: info.seg[barcodeData.segId],
-        refValue: info.refValue[barcodeData.refValueId],
-      };
+        const info = this.barcodeInfo.conc;
 
-      if (barcodeInfo.prod && barcodeInfo.seg && barcodeInfo.refValue) {
-        if (this.validateGeneralDigit(barcode, barcodeData, barcodeInfo)) {
+        const barcodeInfo = {
+          prod: info.prod[barcodeData.prodId],
+          seg: info.seg[barcodeData.segId],
+          refValue: info.refValue[barcodeData.refValueId],
+        };
+
+        if (barcodeInfo.prod && barcodeInfo.seg && barcodeInfo.refValue) {
           const response = {
             barcode: barcode,
           };
@@ -97,12 +101,32 @@ module.exports = class BarcodeController extends Controller {
         } else {
           this.respError("código de barras inválido", "0000x2");
         }
+      } else if (type === "bank") {
+        // títulos bancários
       } else {
         this.respError("código de barras inválido", "0000x1");
       }
     } else {
       this.respError("código de barras inválido", "0000x0");
     }
+  }
+
+  checkBarcodeType(barcode) {
+    if (barcode.length === 44) {
+      if (this.validateConcDigit(barcode)) {
+        return ["conc", barcode];
+      } else {
+        return ["bank"];
+      }
+    } else if (barcode.length === 48) {
+      const noDigits = this.removeConcDigits(barcode);
+      if (this.validateConcDigit(noDigits)) {
+        return ["conc", noDigits];
+      }
+    } else if (barcode.length === 47) {
+      return ["bank"];
+    }
+    return [];
   }
 
   checkDate(barcodeData) {
@@ -149,7 +173,9 @@ module.exports = class BarcodeController extends Controller {
     return dateResult ? format(dateResult) : undefined;
   }
 
-  removeDigits(barcode, numberOfBlocks) {
+  // remoção dos dígitos de boletos de concessionárias
+  removeConcDigits(barcode) {
+    const numberOfBlocks = 4;
     barcode = typeof barcode !== "string" ? barcode.toString() : barcode;
 
     if (barcode.length % numberOfBlocks === 0) {
@@ -172,59 +198,66 @@ module.exports = class BarcodeController extends Controller {
     return barcode;
   }
 
-  validateGeneralDigit(barcode, barcodeData, barcodeInfo) {
+  // validação do dígito de boletos de concessionárias
+  validateConcDigit(barcode) {
     const withOutDigit = barcode.substring(0, 3) + barcode.substring(4);
-    const generalDigit = barcodeData.generalDigit;
-    const digit = barcodeInfo.refValue.digit;
+    const generalDigit = Number(barcode.substring(3, 4));
+    const refValueId = barcode.substring(2, 3);
+    const refValue = this.barcodeInfo.conc.refValue[refValueId];
 
-    let seqId = 0;
-    let sequence = [];
+    if (refValue) {
+      const digit = refValue.digit;
 
-    const next = () => {
-      const item = sequence[seqId];
-      if (item) {
-        seqId++;
-        return item;
-      } else {
-        seqId = 0;
-        return next();
-      }
-    };
+      let seqId = 0;
+      let sequence = [];
 
-    if (digit === 10) {
-      sequence = [2, 1];
-    } else if (digit === 11) {
-      sequence = [2, 3, 4, 5, 6, 7, 8, 9];
-    }
-
-    const results = [];
-    for (let i = withOutDigit.length - 1; i >= 0; i--) {
-      const num = Number(withOutDigit[i]) * next();
+      const next = () => {
+        const item = sequence[seqId];
+        if (item) {
+          seqId++;
+          return item;
+        } else {
+          seqId = 0;
+          return next();
+        }
+      };
 
       if (digit === 10) {
-        if (num.toString().length > 1) {
-          for (let j = 0; j < num.toString().length; j++) {
-            results.push(Number(num.toString()[j]));
+        sequence = [2, 1];
+      } else if (digit === 11) {
+        sequence = [2, 3, 4, 5, 6, 7, 8, 9];
+      }
+
+      const results = [];
+      for (let i = withOutDigit.length - 1; i >= 0; i--) {
+        const num = Number(withOutDigit[i]) * next();
+
+        if (digit === 10) {
+          if (num.toString().length > 1) {
+            for (let j = 0; j < num.toString().length; j++) {
+              results.push(Number(num.toString()[j]));
+            }
+          } else {
+            results.push(num);
           }
-        } else {
+        } else if (digit === 11) {
           results.push(num);
         }
-      } else if (digit === 11) {
-        results.push(num);
       }
+
+      const result = results.reduce((total, item) => total + item);
+
+      let dac = 0;
+      if (digit === 10) {
+        dac = result % 10;
+        dac = dac === 0 ? 0 : 10 - dac;
+      } else if (digit === 11) {
+        dac = result % 11;
+        dac = dac === 0 || dac === 1 ? 0 : 11 - dac;
+      }
+
+      return dac === generalDigit;
     }
-
-    const result = results.reduce((total, item) => total + item);
-
-    let dac = 0;
-    if (digit === 10) {
-      dac = result % 10;
-      dac = dac === 0 ? 0 : 10 - dac;
-    } else if (digit === 11) {
-      dac = result % 11;
-      dac = dac === 0 || dac === 1 ? 0 : 11 - dac;
-    }
-
-    return dac === generalDigit;
+    return false;
   }
 };
