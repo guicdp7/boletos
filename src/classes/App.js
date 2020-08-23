@@ -25,7 +25,7 @@ module.exports = class App {
     const parts = urlReq.split("/");
 
     const controller = firstUpper(parts[1]) + "Controller";
-    const method = parts[2] || "index";
+    const method = (parts[2] || "index") + "Method";
 
     try {
       const controllerClass = require("./controllers/" + controller);
@@ -33,6 +33,7 @@ module.exports = class App {
       const controllerObj = new controllerClass(this, req, resp);
       controllerObj[method]();
     } catch (e) {
+      // console.log(e);
       resp.writeHead(404);
       resp.end();
     }
