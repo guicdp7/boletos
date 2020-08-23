@@ -85,6 +85,11 @@ module.exports = class BarcodeController extends Controller {
           barcodeData.cnpjMf = barcode.substring(15, 23);
           barcodeData.companyFreeField2 = barcode.substring(23, 44);
 
+          const date = this.checkDate(barcodeData);
+          if (date) {
+            barcodeData.expiry = date;
+          }
+
           response.barcodeData = barcodeData;
           response.barcodeInfo = barcodeInfo;
 
@@ -98,6 +103,50 @@ module.exports = class BarcodeController extends Controller {
     } else {
       this.respError("código de barras inválido", "0000x0");
     }
+  }
+
+  checkDate(barcodeData) {
+    const checkDate = (dt) => {
+      const date = new Date(dt);
+
+      if (Object.prototype.toString.call(date) === "[object Date]") {
+        if (!isNaN(date.getTime())) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const format = (dt) => {
+      const split = dt.split("-");
+      return (
+        (Number(split[2]) < 10 ? "0" + split[2] : split[2]) +
+        "/" +
+        (Number(split[1]) < 10 ? "0" + split[1] : split[1]) +
+        "/" +
+        split[0]
+      );
+    };
+
+    const transform = (dt) => {
+      return (
+        dt.substring(0, 4) + "-" + dt.substring(4, 6) + "-" + dt.substring(6, 8)
+      );
+    };
+
+    let barcodeDate = transform(barcodeData.companyFreeField);
+    let dateResult;
+
+    if (checkDate(barcodeDate)) {
+      dateResult = barcodeData;
+    } else {
+      barcodeDate = transform(barcodeData.companyFreeField2);
+      if (checkDate(barcodeDate)) {
+        dateResult = barcodeData;
+      }
+    }
+
+    return dateResult ? format(dateResult) : undefined;
   }
 
   removeDigits(barcode, numberOfBlocks) {
