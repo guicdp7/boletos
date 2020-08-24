@@ -33,7 +33,6 @@ module.exports = class App {
       const controllerObj = new controllerClass(this, req, resp);
       controllerObj[method]();
     } catch (e) {
-      // console.log(e);
       resp.writeHead(404);
       resp.end();
     }
